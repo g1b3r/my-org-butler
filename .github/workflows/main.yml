@@ -1,0 +1,85 @@
+name: Create Package Version
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_number:
+        description: 'Version number (leave empty for auto-increment from sfdx-project.json)'
+        required: false
+        type: string
+        default: ''
+      skip_validation:
+        description: 'Skip validation during package creation'
+        required: false
+        type: boolean
+        default: false
+      code_coverage:
+        description: 'Enable code coverage check during validation'
+        required: false
+        type: boolean
+        default: true
+      require_installation_key:
+        description: 'Require installation key for package (ALWAYS REQUIRED - uncheck only for testing)'
+        required: false
+        type: boolean
+        default: true  # Installation key is REQUIRED by default
+
+jobs:
+  create-version:
+    uses: g1b3r/Apex-Advanced-superbadge/.github/workflows/salesforce_package_version_create.yml@develop
+    with:
+      version_number: ${{ github.event.inputs.version_number }}
+      skip_validation: ${{ github.event.inputs.skip_validation }}
+      code_coverage: ${{ github.event.inputs.code_coverage }}
+    secrets:
+      DEVHUB_AUTH: ${{ secrets.DEVHUB_AUTH }}
+      # INSTALLATION_KEY is REQUIRED - workflow will fail if not provided
+      # Only pass empty string if you explicitly want to bypass (not recommended for production)
+      INSTALLATION_KEY: ${{ github.event.inputs.require_installation_key == 'false' && '' || secrets.INSTALLATION_KEY }}
+
+  notify-success:
+    name: Notify Success
+    needs: create-version
+    if: success()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Display Results
+        run: |
+          echo "✅ Package Version Created Successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 📦 Package Details" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Package:** ${{ needs.create-version.outputs.package_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version:** ${{ needs.create-version.outputs.version_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version ID:** \`${{ needs.create-version.outputs.package_version_id }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Path:** \`${{ needs.create-version.outputs.package_path }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 🔗 Installation Link" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Generate Salesforce installation URL
+          PACKAGE_ID="${{ needs.create-version.outputs.package_version_id }}"
+          INSTALL_URL="https://login.salesforce.com/packaging/installPackage.apexp?p0=${PACKAGE_ID}"
+          SANDBOX_URL="https://test.salesforce.com/packaging/installPackage.apexp?p0=${PACKAGE_ID}"
+          
+          # Show Production link only for main branch
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "### Production/Developer Org" >> $GITHUB_STEP_SUMMARY
+            echo "[$INSTALL_URL]($INSTALL_URL)" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "### Sandbox Org" >> $GITHUB_STEP_SUMMARY
+          echo "[$SANDBOX_URL]($SANDBOX_URL)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 🎯 Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "1. **Test installation** in sandbox using the link above" >> $GITHUB_STEP_SUMMARY
+          echo "2. **Install via CLI:**" >> $GITHUB_STEP_SUMMARY
+          echo "   \`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "   sf package install --package ${{ needs.create-version.outputs.package_version_id }} --target-org YOUR_ORG --wait 30" >> $GITHUB_STEP_SUMMARY
+          echo "   \`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "3. **Promote when ready:**" >> $GITHUB_STEP_SUMMARY
+          echo "   \`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "   sf package version promote --package ${{ needs.create-version.outputs.package_version_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "   \`\`\`" >> $GITHUB_STEP_SUMMARY
